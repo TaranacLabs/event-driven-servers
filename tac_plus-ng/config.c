@@ -2622,7 +2622,8 @@ enum token eval_ruleset_r(tac_session *session, tac_realm *realm, int parent_fir
 	    switch (res) {
 	    case S_permit:
 	    case S_deny:
-		cache_user_profile(session, res);
+		if (!session->user_is_session_specific)
+		    cache_user_profile(session, res);
 		session->rulename = &rule->acl.name;
 		return res;
 	    default:;
@@ -2650,7 +2651,8 @@ static enum token eval_profile_acl(tac_session *session, tac_profile *p, int par
 
 enum token eval_ruleset(tac_session *session, tac_realm *realm)
 {
-    enum token res = lookup_user_profile(session);
+    // Session specific users are freed with the session, their address may be reused.
+    enum token res = session->user_is_session_specific ? S_unknown : lookup_user_profile(session);
     if (res != S_unknown) {
 	report(DEBACL | DEBUG_REGEX_FLAG,
 	       "%s@%s: cached: %s (profile: %s)", session->username.txt,
