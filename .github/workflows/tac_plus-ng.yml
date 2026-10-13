@@ -33,7 +33,7 @@ name: tac_plus-ng
 
 on:
   push:
-    branches: [master]
+    branches: [master, taranac, "feat/**", "fix/**"]
     paths:
       - "tac_plus-ng/**"
       - "mavis/**"
