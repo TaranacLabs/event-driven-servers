@@ -2542,17 +2542,25 @@ static void parse_ruleset(struct sym *sym, tac_realm *realm)
     sym_get(sym);
 }
 
-static enum token lookup_user_profile(tac_session *session)
+static uint32_t user_profile_crc32(tac_session *session)
 {
     uint32_t crc32 = INITCRC32;
     if (session->nac_addr_ascii.txt)
 	crc32 = crc32_update(crc32, (u_char *) session->nac_addr_ascii.txt, session->nac_addr_ascii.len);
     if (session->port.txt)
 	crc32 = crc32_update(crc32, (u_char *) session->port.txt, session->port.len);
+    return crc32;
+}
+
+static enum token lookup_user_profile(tac_session *session)
+{
+    uint32_t crc32 = user_profile_crc32(session);
     for (int i = 0; i < USER_PROFILE_CACHE_SIZE; i++) {
 	if (session->ctx->user_profile_cache[i].user == session->user && session->ctx->user_profile_cache[i].crc32 == crc32) {
 	    if (session->ctx->user_profile_cache[i].valid_until >= io_now.tv_sec) {
 		session->profile = session->ctx->user_profile_cache[i].profile;
+		if (session->ctx->user_profile_cache[i].motd_banner)
+		    session->motd_banner = session->ctx->user_profile_cache[i].motd_banner;
 		return session->ctx->user_profile_cache[i].res;
 	    }
 	    session->ctx->user_profile_cache[i].user = NULL;
@@ -2565,11 +2573,7 @@ static enum token lookup_user_profile(tac_session *session)
 
 static void cache_user_profile(tac_session *session, enum token res)
 {
-    uint32_t crc32 = INITCRC32;
-    if (session->nac_addr_ascii.txt)
-	crc32 = crc32_update(crc32, (u_char *) session->nac_addr_ascii.txt, session->nac_addr_ascii.len);
-    if (session->port.txt)
-	crc32 = crc32_update(crc32, (u_char *) session->port.txt, session->port.len);
+    uint32_t crc32 = user_profile_crc32(session);
 
     int j = 0;
     for (int i = 0; i < USER_PROFILE_CACHE_SIZE; i++) {
@@ -2590,8 +2594,21 @@ static void cache_user_profile(tac_session *session, enum token res)
     session->ctx->user_profile_cache[j].user = session->user;
     session->ctx->user_profile_cache[j].crc32 = crc32;
     session->ctx->user_profile_cache[j].profile = session->profile;
+    session->ctx->user_profile_cache[j].motd_banner = session->motd_banner;
     session->ctx->user_profile_cache[j].res = res;
     session->ctx->user_profile_cache[j].valid_until = io_now.tv_sec + 120;
+}
+
+// A cache hit skips the profile acl, too. Keep the motd banner it may have set.
+static void cache_user_profile_motd(tac_session *session)
+{
+    uint32_t crc32 = user_profile_crc32(session);
+    for (int i = 0; i < USER_PROFILE_CACHE_SIZE; i++)
+	if (session->ctx->user_profile_cache[i].user == session->user && session->ctx->user_profile_cache[i].crc32 == crc32
+	    && session->ctx->user_profile_cache[i].valid_until >= io_now.tv_sec) {
+	    session->ctx->user_profile_cache[i].motd_banner = session->motd_banner;
+	    return;
+	}
 }
 
 enum token eval_ruleset_r(tac_session *session, tac_realm *realm, int parent_first)
@@ -2658,8 +2675,10 @@ enum token eval_ruleset(tac_session *session, tac_realm *realm)
 	return res;
     }
     res = eval_ruleset_r(session, realm, session->ctx->realm->script_realm_parent_first);
-    if (res == S_permit && session->profile && session->profile->acl)
+    if (res == S_permit && session->profile && session->profile->acl) {
 	res = eval_profile_acl(session, session->profile, session->ctx->realm->script_realm_parent_first);
+	cache_user_profile_motd(session);
+    }
     if (res == S_permit)
 	return res;
     return S_deny;
@@ -5726,6 +5745,10 @@ enum token tac_script_eval_r(tac_session *session, struct mavis_action *m)
 	str_set(&session->message, eval_log_format(session, session->ctx, NULL, (struct log_item *) m->b.v, io_now.tv_sec, &session->message.len), 0);
 	report(DEBACL, " line %u: [%s] '%s'", m->line, codestring[m->code].txt, session->message.txt ? session->message.txt : "");
 	break;
+    case S_motd:
+	session->motd_banner = (struct log_item *) m->b.v;
+	report(DEBACL, " line %u: [%s]", m->line, codestring[m->code].txt);
+	break;
 #ifdef WITH_PCRE2
     case S_rewrite:
 	tac_rewrite_user(session, (tac_rewrite *) m->b.v);
@@ -5879,6 +5902,13 @@ static struct mavis_action *tac_script_parse_r(struct sym *sym, mem_t *mem, int 
 	parse(sym, S_equal);
 	m->b.v = (char *) parse_log_format(sym, mem);
 	break;
+    case S_motd:
+	m = mavis_action_new(sym, mem);
+	parse(sym, S_banner);
+	parse(sym, S_equal);
+	m->b.v = (char *) parse_log_format(sym, mem);
+	fixup_banner((struct log_item **) &m->b.v, __FILE__, __LINE__);
+	break;
 #ifdef WITH_PCRE2
     case S_rewrite:
 	m = mavis_action_new(sym, mem);
@@ -5998,7 +6028,7 @@ static struct mavis_action *tac_script_parse_r(struct sym *sym, mem_t *mem, int 
 	}
 	break;
     default:
-	parse_error_expect(sym, S_openbra, S_closebra, S_return, S_permit, S_deny, S_context, S_message, S_if,
+	parse_error_expect(sym, S_openbra, S_closebra, S_return, S_permit, S_deny, S_context, S_message, S_motd, S_if,
 			   S_profile, S_rewrite, S_add, S_set, S_optional, S_unknown);
     }
     if (section && sym->code != S_closebra && sym->code != S_eof)
