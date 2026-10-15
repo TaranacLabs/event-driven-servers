@@ -275,6 +275,46 @@ class PeerCertSan(TlsTestCase):
         self.assertEqual(self.device("ip_twice"), "xr")
 
 
+class PeerCertSanValidation(TlsTestCase):
+    """tls.peer.cert.san.validation = yes: an IP address SAN selects a device only if it is the peer's address.
+
+    The address SAN was compared with the peer address over its own
+    length, 4 bytes for IPv4, but both are kept as IPv4-mapped IPv6
+    addresses, whose first 4 bytes are zero: every IPv4 SAN passed, and a
+    certificate naming another device's address selected that device.
+    """
+
+    LISTEN = {"tls": "tls = yes"}
+    BODY = TLS_REALM + """
+	device checked {
+		address = 127.0.0.9
+		key = checkedkey
+		tls.peer.cert.san.validation = yes
+	}
+	device xr {
+		address = 127.0.0.65
+		key = xrkey
+	}
+""" + policy(("checked", "xr", "localhost"))
+    CLIENTS = {
+        "xr_address": ("/CN=nothing.tactest.invalid", "IP:127.0.0.65"),
+        "own_address": ("/CN=nothing.tactest.invalid", "IP:127.0.0.9"),
+    }
+
+    def device(self, client, source):
+        return self.device_and_transport(self.connect_tls(client, source=source))["tactest-device"]
+
+    def test_ip_san_of_another_device_is_ignored(self):
+        self.assertEqual(self.device("xr_address", "127.0.0.9"), "checked")
+
+    def test_ip_san_of_the_peer_is_used(self):
+        self.assertEqual(self.device("own_address", "127.0.0.9"), "checked")
+
+    def test_without_validation_the_ip_san_selects_the_device(self):
+        """localhost (127.0.0.0/8) doesn't validate: the SAN wins over the address."""
+        self.assertEqual(self.device("xr_address", "127.0.0.10"), "xr")
+
+
 class AutoDetect(TlsTestCase):
     """#236: "tls auto-detect = yes" in the realm made the daemon expect TLS only where spawnd said "tls = yes".
 
