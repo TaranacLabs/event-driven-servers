@@ -802,6 +802,12 @@ void tac_read(struct context *ctx, int cur)
 	       ctx->tls ? "TLS " :
 #endif
 	       "", ntohl(ctx->hdr.tac.session_id));
+	// ${hint} of the CONN-STOP record
+	ctx->hint =
+#ifdef WITH_SSL
+	    ctx->tls ? "obfuscated packet" :
+#endif
+	    "unobfuscated packet";
 	switch (ctx->hdr.tac.type) {
 	case TAC_PLUS_AUTHEN:
 	    send_authen_reply(session, TAC_PLUS_AUTHEN_STATUS_ERROR, msg, 0, NULL, 0, 0);
@@ -862,6 +868,10 @@ void tac_read(struct context *ctx, int cur)
 
 	if (bogus && !ctx->unencrypted_flag && ((more_keys = ctx->key && !ctx->key_fixed && ctx->key->next)))
 	    continue;
+
+	// No key of the device decodes the packet. ${hint} of the CONN-STOP record.
+	if (bogus && !ctx->unencrypted_flag && ctx->key)
+	    ctx->hint = "key mismatch";
 
 	if ((common_data.debug | ctx->debug) & DEBUG_PACKET_FLAG)
 	    dump_nas_pak(session, bogus);
