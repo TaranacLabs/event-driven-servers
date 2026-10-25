@@ -857,7 +857,11 @@ syslog filter = 46 # 2 + 4 + 8 + 32
    ${service} service type (e.g. shell)
    ${result} typically permit or deny
    ${hint} added/replaced for authorization, informal text for
-   accounting, error message for TLS failures
+   accounting, error message for TLS failures. In the CONN-STOP
+   record of a TACACS+ connection: key mismatch (no key of the
+   device decodes a packet: a wrong key, or a malformed packet),
+   unobfuscated packet (TAC_PLUS_UNENCRYPTED_FLAG over TCP),
+   obfuscated packet (obfuscation over TLS)
    ${client.dnsname}, ${nac-name} [deprecated] Client DNS reverse
    mapping
    ${msgid} A message ID, perhaps suitable for RFC5424 logs. These
