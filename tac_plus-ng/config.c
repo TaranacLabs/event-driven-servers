@@ -675,12 +675,17 @@ static tac_realm *new_realm(char *name, tac_realm *parent)
 #if defined(WITH_SSL)
     r->tls_verify_depth = -1;
     r->tls_psk_key_exchange = S_unknown;
-    r->tls_ciphers = // TLS1_2
-	"TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" //
-	":TLS_ECDHE_RSA_WITH_AES_256_CBC_SHA384" //
-	":TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256" //
-	":TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" //
-	":TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256";
+    r->tls_ciphers = // TLS1_2, OpenSSL names
+	"ECDHE-ECDSA-AES256-GCM-SHA384" //
+	":ECDHE-RSA-AES256-GCM-SHA384" //
+	":ECDHE-ECDSA-AES256-SHA384" //
+	":ECDHE-RSA-AES256-SHA384" //
+	":ECDHE-ECDSA-CHACHA20-POLY1305" //
+	":ECDHE-RSA-CHACHA20-POLY1305" //
+	":ECDHE-ECDSA-AES128-GCM-SHA256" //
+	":ECDHE-RSA-AES128-GCM-SHA256" //
+	":ECDHE-ECDSA-AES128-SHA256" //
+	":ECDHE-RSA-AES128-SHA256";
     r->tls_cipher_suites = // TLS1_3
 	"TLS_AES_256_GCM_SHA384" //
 	":TLS_CHACHA20_POLY1305_SHA256" //
@@ -6725,12 +6730,12 @@ static int sni_cb(SSL *ssl, int *al __attribute__((unused)), void *arg __attribu
 static SSL_CTX *ssl_init(struct realm *r, int dtls, int use_tls_psk)
 {
     SSL_CTX *ctx = SSL_CTX_new(dtls ? DTLS_server_method() : TLS_server_method());
-    if (!dtls)
-	SSL_CTX_set_min_proto_version(ctx, r->tls_min_version);
     if (!ctx) {
 	report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_new", __func__, __LINE__);
 	return ctx;
     }
+    if (!dtls)
+	SSL_CTX_set_min_proto_version(ctx, r->tls_min_version);
     if (r->tls_ciphers && !SSL_CTX_set_cipher_list(ctx, r->tls_ciphers)) {
 	report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_set_cipher_list", __func__, __LINE__);
     }

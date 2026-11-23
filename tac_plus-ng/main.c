@@ -1268,7 +1268,7 @@ static void accept_control_tls(struct context *ctx, int cur)
 					}
 				    }
 				} else
-				    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Matching device: %s (%s:%d)", ctx->host->name.txt, __func__, __LINE__);
+				    report(NULL, LOG_DEBUG, DEBUG_PACKET_FLAG, "Cert SAN IP address validation not enabled, skipped.");
 			    }
 #undef CERT_SAN_PRIO
 			    continue;
@@ -1305,7 +1305,7 @@ static void accept_control_tls(struct context *ctx, int cur)
 
 		// check for cn match
 		sockaddr_union su = { 0 };
-		if (!ctx->host && !su_pton(&su, ctx->tls_peer_cn.txt)) {
+		if (!ctx->host && ctx->tls_peer_cn.txt && !su_pton(&su, ctx->tls_peer_cn.txt)) {
 		    su_convert(&su, AF_INET6);
 		    struct in6_addr addr = { };
 		    su_ptoh(&su, &addr);

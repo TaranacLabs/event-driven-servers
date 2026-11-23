@@ -398,12 +398,10 @@ static int verify_cisco_asa_md5(const char *username, const char *password, cons
 static inline void cleanse_string(char *s)
 {
 #ifdef WITH_SSL
-    size_t len = 0;
-    for (char *t = s; *t; t++, len++)
-    OPENSSL_cleanse(s, len);
+    OPENSSL_cleanse(s, strlen(s));
 #else
-    for (; *s; s++)
-	s = 0;
+    for (volatile char *v = s; *v; v++)
+	*v = 0;
 #endif
 }
 
