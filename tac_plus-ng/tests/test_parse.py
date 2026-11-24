@@ -266,6 +266,34 @@ class ErrorLine(unittest.TestCase):
                                "main.cfg", 4, "but got 'bogus'")
 
 
+class IntegerValues(unittest.TestCase):
+    """parse_int(): negative values are taken without a binary prefix; before, every one but -1 was "too large"."""
+
+    def parse(self, value):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = os.path.join(tmp, "int.cfg")
+            with open(path, "w") as f:
+                f.write("id = spawnd { listen = { port = 4949 } }\nid = tac_plus-ng {\n\tretire limit = %s\n}\n" % value)
+            return check(path)
+
+    def test_accepted(self):
+        for value in ("1000", "0x10", "2k", "1G", "-1", "-5", "-0x10", "+7"):
+            with self.subTest(value=value):
+                code, out = self.parse(value)
+                self.assertEqual(code, 0, out)
+
+    def test_refused(self):
+        for value, text in (("-1k", "a negative integer takes no binary prefix"),
+                            ("2G", "integer value too large"),
+                            ("99999999999", "integer value too large"),
+                            ("12abc", "expected an integer, but got '12abc'"),
+                            ("0x", "expected an integer, but got '0x'")):
+            with self.subTest(value=value):
+                code, out = self.parse(value)
+                self.assertGreater(code, 0, out)
+                self.assertIn(text, out)
+
+
 class NestedInclude(DaemonTestCase):
     """What follows an "include" on the first line of an included file is in the running configuration."""
 

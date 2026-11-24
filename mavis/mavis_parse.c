@@ -1142,43 +1142,42 @@ enum token keycode(char *keyword)
 
 int parse_int(struct sym *sym)
 {
-    int i;
-    char c;
-
-    int r = sscanf(sym->buf, "%d%c", &i, &c);
-    if (r == 2 && i == 0 && (c == 'x' || c == 'X'))
-	r = sscanf(sym->buf, "%x%c", &i, &c);
-    if (r == 1 && i == -1) { // shortcut
-	sym_get(sym);
-	return -1;
-    }
-    unsigned long long v = (unsigned) i;
-    switch (r) {
-    case 2:
-	switch (c) {
-	default:
-	    goto bye;
-	case 'g':
-	case 'G':
-	    v <<= 10;
-	case 'm':
-	case 'M':
-	    v <<= 10;
-	case 'k':
-	case 'K':
-	    v <<= 10;
-	}
-    case 1:
-	if (v > INT_MAX)
-	    parse_error(sym, "integer value too large");
-	i = (int) v;
-	sym_get(sym);
-	return i;
-    default:
-      bye:
+    char *s = sym->buf;
+    int negative = (*s == '-');
+    if (*s == '-' || *s == '+')
+	s++;
+    if (!isdigit((int) *s)) {
 	parse_error(sym, "expected an integer, but got '%s'", sym->buf);
 	return -1;
     }
+    int base = (s[0] == '0' && (s[1] == 'x' || s[1] == 'X')) ? 16 : 10;
+    char *end;
+    errno = 0;
+    unsigned long long v = strtoull(s, &end, base);
+    int shift = 0;
+    switch (*end) {
+    case 'g':
+    case 'G':
+	shift += 10;
+	/* FALLTHROUGH */
+    case 'm':
+    case 'M':
+	shift += 10;
+	/* FALLTHROUGH */
+    case 'k':
+    case 'K':
+	shift += 10;
+	end++;
+    }
+    if (*end)
+	parse_error(sym, "expected an integer, but got '%s'", sym->buf);
+    if (negative && shift)
+	parse_error(sym, "a negative integer takes no binary prefix");
+    if (errno || v > ((unsigned long long) INT_MAX >> shift))
+	parse_error(sym, "integer value too large");
+    int i = (int) (v << shift);
+    sym_get(sym);
+    return negative ? -i : i;
 }
 
 u_int parse_uint(struct sym *sym)
