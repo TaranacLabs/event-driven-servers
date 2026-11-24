@@ -274,8 +274,8 @@ class PeerCertSan(TlsTestCase):
         self.assertEqual(self.device("dns_then_ip", single_connect=True), "xr")
 
     def test_dns_san_before_ip_san_from_another_address(self):
-        """The address SAN selects the device, wherever the connection comes from."""
-        self.assertEqual(self.device("dns_then_ip", source="127.0.0.9"), "xr")
+        """An address SAN that is not the peer's address selects nothing: the device of the address answers."""
+        self.assertEqual(self.device("dns_then_ip", source="127.0.0.9"), "localhost")
 
     def test_several_dns_sans(self):
         self.assertEqual(self.device("dns_names", source="127.0.0.9"), "dnsnas")
@@ -879,9 +879,9 @@ class PeerCertSanValidation(TlsTestCase):
     def test_ip_san_of_the_peer_is_used(self):
         self.assertEqual(self.device("own_address", "127.0.0.9"), "checked")
 
-    def test_without_validation_the_ip_san_selects_the_device(self):
-        """localhost (127.0.0.0/8) doesn't validate: the SAN wins over the address."""
-        self.assertEqual(self.device("xr_address", "127.0.0.10"), "xr")
+    def test_without_validation_the_ip_san_selects_nothing(self):
+        """localhost (127.0.0.0/8) doesn't validate: the address SAN is skipped, the address selects the device."""
+        self.assertEqual(self.device("xr_address", "127.0.0.10"), "localhost")
 
 
 class PipeLogAfterReject(TlsTestCase):
