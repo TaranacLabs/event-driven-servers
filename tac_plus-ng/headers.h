@@ -619,7 +619,8 @@ struct tac_session {
     u_int priv_lvl;		/* requested privilege level */
     char *password;
     char *password_new;
-    char *password_bad;
+    u_char password_bad_salt[16];	/* a failed password: salted hash, not the clear text */
+    u_char password_bad_hash[32];
     char *password_prompt;	/* set by "message PASSWORD" in a rule */
     char *challenge;
     char *motd;
@@ -669,6 +670,7 @@ struct tac_session {
 	BISTATE(revmap_pending);
 	BISTATE(revmap_timedout);
 	BISTATE(enable_getuser);
+	BISTATE(password_bad);
 	BISTATE(password_bad_again);
 	BISTATE(passwd_mustchange);
 	BISTATE(passwd_changeable);

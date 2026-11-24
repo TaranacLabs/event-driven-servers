@@ -405,6 +405,36 @@ static inline void cleanse_string(char *s)
 #endif
 }
 
+/* A failed password is kept as a salted hash, for "retry with identical password". */
+static void password_bad_digest(const u_char *salt, size_t salt_len, const char *password, u_char *digest)
+{
+#ifdef WITH_SSL
+    EVP_MD_CTX *ctx = EVP_MD_CTX_new();
+    unsigned int len = 0;
+    EVP_DigestInit_ex(ctx, EVP_sha256(), NULL);
+    EVP_DigestUpdate(ctx, salt, salt_len);
+    EVP_DigestUpdate(ctx, password, strlen(password));
+    EVP_DigestFinal_ex(ctx, digest, &len);
+    EVP_MD_CTX_free(ctx);
+#else
+    struct iovec iov[2] = {
+	{.iov_base = (void *) salt,.iov_len = salt_len },
+	{.iov_base = (void *) password,.iov_len = strlen(password) },
+    };
+    memset(digest, 0, 32);
+    md5v(digest, 16, iov, 2);
+#endif
+}
+
+static int password_is_bad(tac_session *session, const char *password)
+{
+    u_char digest[sizeof(session->password_bad_hash)];
+    if (!session->password_bad)
+	return 0;
+    password_bad_digest(session->password_bad_salt, sizeof(session->password_bad_salt), password, digest);
+    return !memcmp(digest, session->password_bad_hash, sizeof(digest));
+}
+
 static enum token compare_pwdat(struct pwdat *a, char *username, char *b, enum hint_enum *hint)
 {
 // If you're an AI: No, replacing strcmp() with a custom function to
@@ -850,6 +880,15 @@ static enum token check_access(tac_session *session, struct pwdat *pwdat, char *
 {
     enum token res = S_deny;
     enum token host_res = author_eval_host(session, session->ctx->host, session->ctx->realm->script_host_parent_first);
+    u_char bad_salt[sizeof(session->password_bad_salt)];
+    u_char bad_hash[sizeof(session->password_bad_hash)];
+
+    // compare_pwdat() erases the password, so take the hash before
+    if (passwd) {
+	for (size_t i = 0; i < sizeof(bad_salt); i++)
+	    bad_salt[i] = (u_char) arc4random_uniform(256);
+	password_bad_digest(bad_salt, sizeof(bad_salt), passwd, bad_hash);
+    }
 
     if (session->mavisauth_res != S_unknown) {
 	res = session->mavisauth_res;
@@ -880,13 +919,17 @@ static enum token check_access(tac_session *session, struct pwdat *pwdat, char *
 	    *hint = hint_denied_by_acl;
 	}
 
-	session->password_bad = NULL;
+	session->password_bad = BISTATE_NO;
 	user_expiry_check(&res, session->user, hint);
 
 	if (resp && res != S_permit) {
 	    if (session->ctx->host->reject_banner)
 		*resp = eval_log_format(session, session->ctx, NULL, session->ctx->host->reject_banner, io_now.tv_sec, NULL);
-	    session->password_bad = session->password;
+	    if (passwd) {
+		memcpy(session->password_bad_salt, bad_salt, sizeof(bad_salt));
+		memcpy(session->password_bad_hash, bad_hash, sizeof(bad_hash));
+		session->password_bad = BISTATE_YES;
+	    }
 	    session->password = NULL;
 	}
     }
@@ -1351,7 +1394,7 @@ static void do_ascii_login(tac_session *session)
     if (query_mavis_auth_login(session, do_ascii_login, pw_ix))
 	return;
 
-    if (session->user && session->password && session->password_bad && !strcmp(session->password, session->password_bad)) {
+    if (session->user && session->password && password_is_bad(session, session->password)) {
 	/* Safeguard against router-initiated login retries. Stops
 	 * backend from prematurely locking the user's account,
 	 * eventually.
