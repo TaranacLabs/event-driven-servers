@@ -511,6 +511,7 @@ void complete_realm(tac_realm *r)
 	RS(backend_failure_period);
 #if defined(WITH_SSL)
 	RS(tls_verify_depth);
+	RS(tls_min_version);
 #endif
 #undef RS
 
@@ -690,7 +691,7 @@ static tac_realm *new_realm(char *name, tac_realm *parent)
 	"TLS_AES_256_GCM_SHA384" //
 	":TLS_CHACHA20_POLY1305_SHA256" //
 	":TLS_AES_128_GCM_SHA256";
-    r->tls_min_version = TLS1_3_VERSION;
+    r->tls_min_version = -1;	// by aaa.protocol of the listener, see tls_min_version() in main.c
 #endif
 
     if (parent) {
@@ -6734,8 +6735,6 @@ static SSL_CTX *ssl_init(struct realm *r, int dtls, int use_tls_psk)
 	report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_new", __func__, __LINE__);
 	return ctx;
     }
-    if (!dtls)
-	SSL_CTX_set_min_proto_version(ctx, r->tls_min_version);
     if (r->tls_ciphers && !SSL_CTX_set_cipher_list(ctx, r->tls_ciphers)) {
 	report(NULL, LOG_ERR, ~0, "%s %d: SSL_CTX_set_cipher_list", __func__, __LINE__);
     }

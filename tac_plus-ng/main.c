@@ -2121,6 +2121,18 @@ static void accept_control_check_tls(struct context *ctx, int cur __attribute__(
 	accept_control_check_tls_final(ctx);
 }
 
+// The lowest TLS version a TLS (not DTLS) connection may negotiate. "tls min version" of the realm,
+// else by the aaa.protocol of the listener: RADIUS over TLS (RFC 6614) allows TLS 1.2, TACACS+ over
+// TLS (RFC 9887) requires TLS 1.3, and so does a listener that doesn't say.
+static int tls_min_version(struct context *ctx)
+{
+    if (ctx->realm->tls_min_version > 0)
+	return ctx->realm->tls_min_version;
+    if (ctx->aaa_protocol == S_radius_tls || (ctx->host->bug_compatibility & CLIENT_BUG_BAD_TLS_VERSION))
+	return TLS1_2_VERSION;
+    return TLS1_3_VERSION;
+}
+
 static void accept_control_check_tls_final(struct context *ctx)
 {
     if (ctx->host && (ctx->use_tls || ctx->use_dtls)) {
@@ -2176,6 +2188,8 @@ static void accept_control_check_tls_final(struct context *ctx)
 		    versions >>= 8;
 		}
 		ver |= 0x0300;
+		if (ver < tls_min_version(ctx))
+		    ver = tls_min_version(ctx);
 	    }
 	    SSL_set_min_proto_version(ctx->tls, ver);
 	    SSL_set_fd(ctx->tls, ctx->sock);
